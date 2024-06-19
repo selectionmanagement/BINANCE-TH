@@ -1,11 +1,10 @@
-from binance.client import Client
+import requests
+headers = {
+'Accept': 'application/json'
+}
 
-api_key = 'your_api_key_here'
-api_secret = 'your_api_secret_here'
+r = requests.get('https://api.binance.th/api/v1/ticker/bookTicker', params={
+'symbol': 'BTCUSDT'
+}, headers = headers)
 
-client = Client(api_key, api_secret)
-
-# Get latest price for BTC/THB
-btc_price = client.get_symbol_ticker(symbol="BTCUSDT")
-print("The current price of BTC in THB is:", btc_price['price'])
-account
+print(r.json())
