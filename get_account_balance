@@ -1,0 +1,47 @@
+import requests
+import time
+import hmac
+import hashlib
+
+
+# Constants
+API_KEY = 'your_api_key_here'
+SECRET_KEY = 'your_api_secret_here'
+BASE_URL = 'https://api.binance.th'
+
+# Function to fetch server time
+def get_server_time():
+    url = f"{BASE_URL}/api/v1/time"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()['serverTime']
+    else:
+        # Fallback to local time if the server time cannot be retrieved
+        return int(time.time() * 1000)
+
+# Generate a signature
+def generate_signature(query_string, secret_key):
+    return hmac.new(secret_key.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+
+# Main function to fetch account information
+def get_account_info(api_key, secret_key):
+    server_time = get_server_time()
+    recv_window = 5000
+    timestamp = server_time - 500  # Adjust by 500ms to be on the safe side
+    query_params = f'timestamp={timestamp}&recv_window={recv_window}'
+    signature = generate_signature(query_params, secret_key)
+
+    # Headers and URL
+    headers = {
+        'X-MBX-APIKEY': api_key
+    }
+    url = f"{BASE_URL}/api/v1/account?{query_params}&signature={signature}"
+
+    # Make the GET request
+    response = requests.get(url, headers=headers)
+    return response.json()
+
+# Example usage
+if __name__ == "__main__":
+    result = get_account_info(API_KEY, SECRET_KEY)
+    print(result)
