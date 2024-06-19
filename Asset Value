@@ -1,0 +1,56 @@
+import requests
+import time
+import hmac
+import hashlib
+
+# Constants
+API_KEY = ''
+SECRET_KEY = ''
+BASE_URL = 'https://api.binance.th'
+
+# Function to fetch server time
+def get_server_time():
+    url = f"{BASE_URL}/api/v1/time"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()['serverTime']
+    else:
+        return int(time.time() * 1000)
+
+# Generate a signature
+def generate_signature(query_string, secret_key):
+    return hmac.new(secret_key.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+
+# Function to fetch account information
+def get_account_info(api_key, secret_key):
+    server_time = get_server_time()
+    recv_window = 5000
+    timestamp = server_time - 500
+    query_params = f'timestamp={timestamp}&recv_window={recv_window}'
+    signature = generate_signature(query_params, secret_key)
+    headers = {'X-MBX-APIKEY': api_key}
+    url = f"{BASE_URL}/api/v1/account?{query_params}&signature={signature}"
+    response = requests.get(url, headers=headers)
+    return response.json()
+
+# Calculate the value of a specific asset based on the current ask price
+def calculate_asset_value(asset, balances, ask_price):
+    for balance in balances:
+        if balance['asset'] == asset:
+            return float(balance['free']) * float(ask_price)
+    return 0.0  # Return 0 if the asset is not found
+
+# Example usage
+if __name__ == "__main__":
+    # Fetch account information
+    account_info = get_account_info(API_KEY, SECRET_KEY)
+    balances = account_info['balances']
+    
+    # Fetch current market price for BTCUSDT
+    response = requests.get('https://api.binance.th/api/v1/ticker/bookTicker', params={
+        'symbol': 'BTCUSDT'}, headers={'Accept': 'application/json'})
+    ask_price = response.json()['askPrice']
+
+    # Calculate BTC asset value
+    btc_value = calculate_asset_value('BTC', balances, ask_price)
+    print(f"Value of BTC holdings: {btc_value:.2f} USDT")
