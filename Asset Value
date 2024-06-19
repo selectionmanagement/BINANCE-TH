@@ -47,10 +47,19 @@ if __name__ == "__main__":
     balances = account_info['balances']
     
     # Fetch current market price for BTCUSDT
-    response = requests.get('https://api.binance.th/api/v1/ticker/bookTicker', params={
+    response_btc = requests.get('https://api.binance.th/api/v1/ticker/bookTicker', params={
         'symbol': 'BTCUSDT'}, headers={'Accept': 'application/json'})
-    ask_price = response.json()['askPrice']
+    btc_ask_price = response_btc.json()['askPrice']
 
     # Calculate BTC asset value
-    btc_value = calculate_asset_value('BTC', balances, ask_price)
-    print(f"Value of BTC holdings: {btc_value:.2f} USDT")
+    btc_value = calculate_asset_value('BTC', balances, btc_ask_price)
+    print(f"Value of BTC holdings: {btc_value:.2f} US2DT")
+
+    # Fetch current market price for ETHUSDT
+    response_eth = requests.get('https://api.binance.th/api/v1/ticker/bookTicker', params={
+        'symbol': 'ETHUSDT'}, headers={'Accept': 'application/json'})
+    eth_ask_price = response_eth.json()['askPrice']
+
+    # Calculate ETH asset value
+    eth_value = calculate_asset_value('ETH', balances, eth_ask_price)
+    print(f"Value of ETH holdings: {eth_value:.2f} USDT")
