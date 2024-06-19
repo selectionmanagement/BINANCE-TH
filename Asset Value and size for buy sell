@@ -40,6 +40,18 @@ def calculate_asset_value(asset, balances, ask_price):
             return float(balance['free']) * float(ask_price)
     return 0.0  # Return 0 if the asset is not found
 
+def cal_size(btc_value, fix_asset_1, ):
+    # Calculate how much BTC and ETH you can buy with fix_asset_1 and fix_asset_2
+    btc_size = fix_asset_1 - btc_value if btc_value != 0 else 0
+    return btc_size
+
+# Example usage
+fix_asset_1 = 10  # USD allocated for BTC
+
+# Calculate the sizes
+btc_size = cal_size(btc_value,  fix_asset_1)
+print(f"Amount of BTC you can buy with ${fix_asset_1}: {btc_size} BTC")
+
 # Example usage
 if __name__ == "__main__":
     # Fetch account information
