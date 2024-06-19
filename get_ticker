@@ -1,0 +1,11 @@
+from binance.client import Client
+
+api_key = 'your_api_key_here'
+api_secret = 'your_api_secret_here'
+
+client = Client(api_key, api_secret)
+
+# Get latest price for BTC/THB
+btc_price = client.get_symbol_ticker(symbol="BTCUSDT")
+print("The current price of BTC in THB is:", btc_price['price'])
+account
