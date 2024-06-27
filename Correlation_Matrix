@@ -1,0 +1,40 @@
+import requests
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+
+# Function to get historical price data for a symbol
+def get_historical_prices(symbol, interval='1d', limit=100):
+    url = f'https://api.binance.com/api/v3/klines'
+    params = {
+        'symbol': symbol,
+        'interval': interval,
+        'limit': limit
+    }
+    response = requests.get(url, params=params)
+    data = response.json()
+    prices = [float(item[4]) for item in data]  # Close prices
+    dates = [datetime.fromtimestamp(item[0] / 1000) for item in data]  # Timestamps
+    return dates, prices
+
+# Fetch historical data for multiple cryptocurrencies
+symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT', 'SOLUSDT', 'DOTUSDT', 'DOGEUSDT', 'SHIBUSDT', 'LTCUSDT']
+historical_data = {}
+
+for symbol in symbols:
+    dates, prices = get_historical_prices(symbol)
+    historical_data[symbol] = prices
+
+# Create a DataFrame with historical prices
+df = pd.DataFrame(historical_data, index=dates)
+
+# Calculate the correlation matrix
+correlation_matrix = df.corr()
+
+# Plot the correlation matrix using Seaborn
+plt.figure(figsize=(10, 8))
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', linewidths=0.5)
+plt.title('Cryptocurrency Correlation Matrix')
+plt.show()
