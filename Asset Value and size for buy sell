@@ -1,68 +1,129 @@
 import requests
-import time
 import hmac
 import hashlib
+import time
 
 # Constants
 API_KEY = ''
 SECRET_KEY = ''
-BASE_URL = 'https://api.binance.th'
+BASE_URL = 'https://api.binance.th/api/v1'
+
+# Time cycle settings (replace with your time cycle logic)
+multi = 300  # base multiplier in seconds
+time_cycles = [3, 1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5, 7, 1, 4]  # dynamic time intervals
 
 # Function to fetch server time
 def get_server_time():
     url = f"{BASE_URL}/api/v1/time"
     response = requests.get(url)
-    if response.status_code == 200:
-        return response.json()['serverTime']
-    else:
-        return int(time.time() * 1000)
+    return response.json().get('serverTime', int(time.time() * 1000))
 
 # Generate a signature
 def generate_signature(query_string, secret_key):
     return hmac.new(secret_key.encode(), query_string.encode(), hashlib.sha256).hexdigest()
 
+# Send request with signature
+def send_request(method, path, params, api_key, secret_key):
+    params["timestamp"] = str(get_server_time())
+    query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+    signature = generate_signature(query_string, secret_key)
+    url = f"{BASE_URL}{path}?{query_string}&signature={signature}"
+    headers = {"X-MBX-APIKEY": api_key}
+    response = requests.request(method, url, headers=headers)
+    try:
+        return response.json()
+    except ValueError:
+        print(f"Error decoding JSON from response: {response.text}")
+        return None
+
 # Function to fetch account information
 def get_account_info(api_key, secret_key):
-    server_time = get_server_time()
-    recv_window = 5000
-    timestamp = server_time - 500
-    query_params = f'timestamp={timestamp}&recv_window={recv_window}'
-    signature = generate_signature(query_params, secret_key)
-    headers = {'X-MBX-APIKEY': api_key}
-    url = f"{BASE_URL}/api/v1/account?{query_params}&signature={signature}"
-    response = requests.get(url, headers=headers)
-    return response.json()
+    path = "/api/v1/account"
+    params = {"recvWindow": 5000}
+    return send_request("POST", path, params, api_key, secret_key)
 
 # Calculate the value of a specific asset based on the current ask price
 def calculate_asset_value(asset, balances, ask_price):
     for balance in balances:
         if balance['asset'] == asset:
             return float(balance['free']) * float(ask_price)
-    return 0.0  # Return 0 if the asset is not found
+    return 0.0
 
-def cal_size(btc_value, fix_asset_1, ):
-    # Calculate how much BTC and ETH you can buy with fix_asset_1 and fix_asset_2
-    btc_size = fix_asset_1 - btc_value if btc_value != 0 else 0
-    return btc_size
+# Calculate trade size based on the new logic
+def calculate_trade_size(btc_value, fix_asset_1, ask_price):
+    ask_price = float(ask_price)  # Convert ask_price to float
+    size = (fix_asset_1 - btc_value) / ask_price  # Calculate trade size in BTC
+    return abs(size)  # Ensure the size is positive
 
-# Example usage
-fix_asset_1 = 10  # USD allocated for BTC
-
-# Calculate the sizes
-btc_size = cal_size(btc_value,  fix_asset_1)
-print(f"Amount of BTC you can buy with ${fix_asset_1}: {btc_size} BTC")
-
-# Example usage
-if __name__ == "__main__":
-    # Fetch account information
-    account_info = get_account_info(API_KEY, SECRET_KEY)
-    balances = account_info['balances']
+def execute_trade_logic(fix_asset_1, btc_value, ask_price, fix_percent=0.05):
+    upper_threshold = fix_asset_1 + (fix_asset_1 * fix_percent)
+    lower_threshold = fix_asset_1 - (fix_asset_1 * fix_percent)
     
-    # Fetch current market price for BTCUSDT
-    response = requests.get('https://api.binance.th/api/v1/ticker/bookTicker', params={
-        'symbol': 'BTCUSDT'}, headers={'Accept': 'application/json'})
-    ask_price = response.json()['askPrice']
+    btc_size = calculate_trade_size(btc_value, fix_asset_1, ask_price)  # Size in BTC
+    formatted_btc_size = f"{btc_size:.6f}"  # Format btc_size to 8 decimal places
 
-    # Calculate BTC asset value
-    btc_value = calculate_asset_value('BTC', balances, ask_price)
-    print(f"Value of BTC holdings: {btc_value:.2f} USDT")
+    params = {
+        "symbol": "BTCUSDT",
+        "type": "MARKET",
+        "quantity": formatted_btc_size,  # Ensure it is in BTC
+        "recvWindow": 5000
+    }
+
+    if btc_value > upper_threshold:
+        params["side"] = "SELL"
+        response = send_request("POST", "/api/v1/order", params, API_KEY, SECRET_KEY)
+        print(f"SELL order response: {response}")
+    elif btc_value < lower_threshold:
+        params["side"] = "BUY"
+        response = send_request("POST", "/api/v1/order", params, API_KEY, SECRET_KEY)
+        print(f"BUY order response: {response}")
+    else:
+        print("BTC value is within the threshold limits. No trade executed.")
+
+# Example usage with looping and dynamic time cycles
+if __name__ == "__main__":
+    while True:  # Continuous loop
+        for cycle in time_cycles:  # Iterate over the time cycles
+            # Fetch account information
+            account_info = get_account_info(API_KEY, SECRET_KEY)
+            if account_info is None:
+                print("Failed to fetch account info.")
+                time.sleep(multi * cycle)
+                continue
+
+            balances = account_info.get('balances', [])
+
+            # Fetch current market price for BTCUSDT
+            response = requests.get(f"{BASE_URL}/api/v1/ticker/bookTicker", params={'symbol': 'BTCUSDT'})
+            try:
+                ask_price = response.json()['askPrice']
+            except ValueError:
+                print(f"Error decoding JSON from response: {response.text}")
+                time.sleep(multi * cycle)
+                continue
+
+            # Calculate BTC asset value
+            asset_BTC = next((float(balance['free']) for balance in balances if balance['asset'] == 'BTC'), 0.0)
+            asset_USDT = next((float(balance['free']) for balance in balances if balance['asset'] == 'USDT'), 0.0)
+            btc_value = asset_BTC * float(ask_price)  # Total value in USD
+
+            # USD allocated for BTC
+            fix_asset_1 = 15
+
+            # Print the required values
+            print("Fixed Asset 1:", fix_asset_1)
+            print("BTC Value in USDT:", btc_value)  # Added print statement for btc_value
+            print("Price:", ask_price)
+            print("Asset Total:", btc_value + asset_USDT)
+            print("Asset USDT:", asset_USDT)
+            btc_size = calculate_trade_size(btc_value, fix_asset_1, ask_price)
+            print("BTC Size:", btc_size)
+            formatted_btc_size = f"{btc_size:.5f}"  # Format btc_size to 8 decimal places
+            print("Formatted BTC Size:", formatted_btc_size)
+
+            # Execute trading logic based on current asset value
+            execute_trade_logic(fix_asset_1, btc_value, ask_price)
+
+            # Wait for the next time cycle interval before checking again
+            print(f"Next cycle in {cycle * multi} seconds.")
+            time.sleep(cycle * multi)
