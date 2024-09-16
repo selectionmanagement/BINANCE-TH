@@ -7,7 +7,7 @@ from datetime import datetime
 
 # Function to get historical price data for a symbol
 def get_historical_prices(symbol, interval='1d', limit=100):
-    url = f'https://api.binance.com/api/v3/klines'
+    url = f'https://api.binance.th/api/v1'
     params = {
         'symbol': symbol,
         'interval': interval,
