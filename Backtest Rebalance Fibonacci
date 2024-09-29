@@ -1,0 +1,111 @@
+import yfinance as yf
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Load data from yfinance
+def load_data(ticker, period='5y', interval='1d'):
+    data = yf.Ticker(ticker).history(period=period, interval=interval)
+    data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
+    return data
+
+# Function to execute trade logic
+def execute_trade_logic(fix_asset_1, current_btc_value, ask_price, btc_size, free_cash, total_volume, rebalance_threshold=0.01):
+    upper_threshold = fix_asset_1 * (1 + rebalance_threshold)
+    lower_threshold = fix_asset_1 * (1 - rebalance_threshold)
+    
+    if current_btc_value > upper_threshold:
+        # Sell BTC to bring the value back to fix_asset_1
+        sell_amount = current_btc_value - fix_asset_1
+        btc_to_sell = sell_amount / ask_price
+        btc_size -= btc_to_sell
+        free_cash += sell_amount
+        total_volume += btc_to_sell  # Track total volume of BTC sold
+        print(f"Selling ${sell_amount:.2f} worth of BTC. Free cash: ${free_cash:.2f}")
+    elif current_btc_value < lower_threshold:
+        # Buy BTC to bring the value back to fix_asset_1
+        buy_amount = fix_asset_1 - current_btc_value
+        if buy_amount <= free_cash:
+            btc_to_buy = buy_amount / ask_price
+            btc_size += btc_to_buy
+            free_cash -= buy_amount
+            total_volume += btc_to_buy  # Track total volume of BTC bought
+            print(f"Buying ${buy_amount:.2f} worth of BTC. Free cash: ${free_cash:.2f}")
+        else:
+            print(f"Not enough free cash to buy BTC. Free cash: ${free_cash:.2f}")
+    
+    return btc_size, free_cash, total_volume
+
+# Simulate dynamic time cycles and 1% rebalance together
+def simulate_trading(fix_asset, btc_size, data, rebalance_threshold=0.01):
+    free_cash = 10000 - fix_asset  # Starting free cash
+    cycle_index = 0  # To track the current cycle
+    time_cycles = [1, 1, 2, 3, 5, 8, 1, 1, 2, 3, 5, 8, 1, 1, 2]  # dynamic time intervals in days
+    
+    # Variables to track statistics
+    portfolio_values = []
+    btc_prices = []
+    max_value = -float('inf')  # To track the max portfolio value
+    max_drawdown = 0  # To track the max drawdown
+    total_volume = 0  # Total BTC volume from rebalancing
+
+    i = 0  # To keep track of current index in data
+    while i < len(data):
+        ask_price = data['Close'].iloc[i]
+        current_btc_value = btc_size * ask_price  # Value of current BTC holdings
+        total_portfolio_value = current_btc_value + free_cash
+
+        # Track the portfolio value and BTC price
+        portfolio_values.append(total_portfolio_value)
+        btc_prices.append(ask_price)
+
+        # Update max value and calculate drawdown
+        if total_portfolio_value > max_value:
+            max_value = total_portfolio_value
+        drawdown = (max_value - total_portfolio_value) / max_value
+        max_drawdown = max(max_drawdown, drawdown)
+
+        # Execute trade logic with 1% rebalance threshold
+        if (current_btc_value > fix_asset * (1 + rebalance_threshold)) or (current_btc_value < fix_asset * (1 - rebalance_threshold)):
+            btc_size, free_cash, total_volume = execute_trade_logic(fix_asset, current_btc_value, ask_price, btc_size, free_cash, total_volume, rebalance_threshold)
+        
+        # Move to the next time cycle (days)
+        days_to_advance = time_cycles[cycle_index]
+        print(f"Advancing {days_to_advance} day(s) for the next rebalance.\n")
+        i += days_to_advance  # Skip the next `days_to_advance` days
+
+        # Move to the next time cycle, loop back to the beginning of the list if needed
+        cycle_index = (cycle_index + 1) % len(time_cycles)
+
+    # Calculate max profit and loss
+    max_pl = (max(portfolio_values) - portfolio_values[0]) / portfolio_values[0] * 100
+
+    return portfolio_values, btc_prices, max_drawdown, max_pl, total_volume
+
+# Example of running the strategy
+if __name__ == "__main__":
+    # Load historical data for BTC-USD (daily data)
+    data = load_data('BTC-USD', period='5y', interval='1d')  # Fetching daily data
+    
+    # Set up the initial conditions for the simulation
+    fix_asset = 5000  # Fixed BTC value target (e.g., $5000)
+    btc_size = fix_asset / data['Close'].iloc[0]  # Initial BTC amount based on the first day's price
+
+    # Simulate trading with dynamic day intervals and 1% rebalance threshold
+    portfolio_values, btc_prices, max_drawdown, max_pl, total_volume = simulate_trading(fix_asset, btc_size, data)
+    
+    # Convert to percentage changes for plotting
+    portfolio_pct_change = [(value / portfolio_values[0] - 1) * 100 for value in portfolio_values]
+    btc_pct_change = [(price / btc_prices[0] - 1) * 100 for price in btc_prices]
+
+    # Plot the percentage changes
+    plt.figure(figsize=(12, 8))
+    plt.plot(portfolio_pct_change, label='Total Portfolio Value (%)', color='blue')
+    plt.plot(btc_pct_change, label='BTC Price (%)', color='orange')
+    plt.legend(loc='best')
+    plt.title('Percentage Change in Portfolio Value vs BTC Price Over Time')
+    plt.show()
+
+    # Report the results
+    print(f"Max Drawdown: {max_drawdown * 100:.2f}%")
+    print(f"Max P/L: {max_pl:.2f}%")
+    print(f"Total Volume from Rebalance: {total_volume:.6f} BTC")
