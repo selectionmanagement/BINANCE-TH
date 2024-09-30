@@ -1,0 +1,125 @@
+import requests
+import pandas as pd
+import time
+
+# Binance Thailand API Base URL
+BINANCE_API_URL = 'https://api.binance.th/api/v1/ticker/bookTicker'
+
+# Bitkub API Base URL
+BITKUB_API_URL = 'https://api.bitkub.com/api/market/ticker'
+
+# Trading fees (as percentages)
+BINANCE_TRADING_FEE = 0.0025  # 0.25%
+BITKUB_TRADING_FEE = 0.0025  # 0.25%
+
+# Function to fetch Bid-Ask prices for SOLTHB from Binance
+def fetch_bid_ask_binance(symbol):
+    url = f'{BINANCE_API_URL}?symbol={symbol}'
+    response = requests.get(url)
+    
+    if response.status_code != 200:
+        print(f"Error fetching Binance data: {response.status_code} - {response.text}")
+        return None
+
+    data = response.json()
+    
+    bid_price = float(data['bidPrice'])
+    ask_price = float(data['askPrice'])
+    
+    timestamp = pd.Timestamp.now()
+    
+    return {
+        'timestamp': timestamp,
+        'binance_bid': bid_price,
+        'binance_ask': ask_price
+    }
+
+# Function to fetch Bid-Ask prices for SOLTHB from Bitkub
+def fetch_bid_ask_bitkub(symbol):
+    response = requests.get(BITKUB_API_URL)
+    
+    if response.status_code != 200:
+        print(f"Error fetching Bitkub data: {response.status_code} - {response.text}")
+        return None
+
+    data = response.json()
+    
+    # Ensure the symbol exists in the data
+    if symbol not in data:
+        print(f"Symbol {symbol} not found in Bitkub data")
+        return None
+    
+    bid_price = float(data[symbol]['highestBid'])
+    ask_price = float(data[symbol]['lowestAsk'])
+    
+    timestamp = pd.Timestamp.now()
+    
+    return {
+        'timestamp': timestamp,
+        'bitkub_bid': bid_price,
+        'bitkub_ask': ask_price
+    }
+
+# Function to calculate net arbitrage profit after fees (without withdrawal fee)
+def calculate_arbitrage_profit(buy_price, sell_price, buy_fee, sell_fee):
+    buy_cost = buy_price * (1 + buy_fee)
+    sell_revenue = sell_price * (1 - sell_fee)
+    profit = sell_revenue - buy_cost
+    return profit
+
+# Function to collect and compare Bid-Ask from both Binance and Bitkub
+def compare_bid_ask(symbol_binance, symbol_bitkub, interval_seconds=60, duration_minutes=10):
+    bid_ask_history = []
+
+    num_intervals = int((duration_minutes * 60) / interval_seconds)
+    
+    for _ in range(num_intervals):
+        # Fetch Bid-Ask from Binance
+        bid_ask_binance = fetch_bid_ask_binance(symbol_binance)
+        
+        # Fetch Bid-Ask from Bitkub
+        bid_ask_bitkub = fetch_bid_ask_bitkub(symbol_bitkub)
+        
+        if bid_ask_binance and bid_ask_bitkub:
+            # Combine both results into a single dictionary for comparison
+            combined_data = {
+                'timestamp': bid_ask_binance['timestamp'],
+                'binance_bid': bid_ask_binance['binance_bid'],
+                'binance_ask': bid_ask_binance['binance_ask'],
+                'bitkub_bid': bid_ask_bitkub['bitkub_bid'],
+                'bitkub_ask': bid_ask_bitkub['bitkub_ask'],
+            }
+            
+            # Append to the list for historical tracking
+            bid_ask_history.append(combined_data)
+            
+            # Display current Bid-Ask prices and potential arbitrage opportunities
+            print(f"Timestamp: {combined_data['timestamp']}")
+            print(f"Binance - Bid: {combined_data['binance_bid']}, Ask: {combined_data['binance_ask']}")
+            print(f"Bitkub  - Bid: {combined_data['bitkub_bid']}, Ask: {combined_data['bitkub_ask']}")
+            
+            # Calculate potential arbitrage opportunities without withdrawal fee
+            if combined_data['binance_ask'] < combined_data['bitkub_bid']:
+                profit = calculate_arbitrage_profit(combined_data['binance_ask'], combined_data['bitkub_bid'],
+                                                    BINANCE_TRADING_FEE, BITKUB_TRADING_FEE)
+                if profit > 0:
+                    print(f"Arbitrage Opportunity: Buy on Binance at {combined_data['binance_ask']} and sell on Bitkub at {combined_data['bitkub_bid']}. Estimated Profit: {profit:.2f} THB")
+            elif combined_data['bitkub_ask'] < combined_data['binance_bid']:
+                profit = calculate_arbitrage_profit(combined_data['bitkub_ask'], combined_data['binance_bid'],
+                                                    BITKUB_TRADING_FEE, BINANCE_TRADING_FEE)
+                if profit > 0:
+                    print(f"Arbitrage Opportunity: Buy on Bitkub at {combined_data['bitkub_ask']} and sell on Binance at {combined_data['binance_bid']}. Estimated Profit: {profit:.2f} THB")
+        
+        # Wait before the next interval
+        time.sleep(interval_seconds)
+    
+    # Convert list of bid-ask data to DataFrame for analysis
+    df_bid_ask = pd.DataFrame(bid_ask_history)
+    
+    return df_bid_ask
+
+# Compare Bid-Ask history for SOLTHB on both Binance and Bitkub
+df_comparison = compare_bid_ask('SOLTHB', 'THB_SOL', interval_seconds=30, duration_minutes=120)
+
+# Display the DataFrame
+print(df_comparison)
